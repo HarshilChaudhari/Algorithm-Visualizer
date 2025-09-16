@@ -1,9 +1,14 @@
 import React, { useEffect, useState } from "react";
 import Controls from "./components/Controls";
 import SortingCanvas from "./visualizations/sorting/SortingCanvas";
+import QuickSortCanvas from "./visualizations/sorting/QuickSortCanvas";
+import MergeSortCanvas from "./visualizations/sorting/MergeSortCanvas";
+
 import { bubbleSortSteps } from "./algorithms/sorting/bubbleSort";
 import { insertionSortSteps } from "./algorithms/sorting/insertionSort";
-import { heapSortSteps } from "./algorithms/sorting/heapSort"; // new import
+import { heapSortSteps } from "./algorithms/sorting/heapSort";
+import { quickSortSteps } from "./algorithms/sorting/quickSortSteps";
+import { mergeSortSteps } from "./algorithms/sorting/mergeSort";
 
 function generateRandomArray(size, maxValue = 20) {
   return Array.from({ length: size }, () =>
@@ -29,7 +34,11 @@ export default function App() {
       case "insertion":
         return insertionSortSteps(arr);
       case "heap":
-        return heapSortSteps(arr); // new case for Heap Sort
+        return heapSortSteps(arr);
+      case "quick":
+        return quickSortSteps(arr);
+      case "merge":
+        return mergeSortSteps(arr);
       case "bubble":
       default:
         return bubbleSortSteps(arr);
@@ -44,7 +53,7 @@ export default function App() {
       setResetCounter((prev) => prev + 1); // reset canvas to step 0
       setIsPlaying(false);
     } else {
-      setSteps([]); // guard for empty steps
+      setSteps([]);
     }
   }, [array, runId, algorithm]);
 
@@ -65,6 +74,14 @@ export default function App() {
     setRunId((r) => r + 1);
   };
   const handleFinish = () => setIsPlaying(false);
+
+  // choose canvas based on algorithm
+  const CanvasComponent =
+    algorithm === "quick"
+      ? QuickSortCanvas
+      : algorithm === "merge"
+      ? MergeSortCanvas
+      : SortingCanvas;
 
   return (
     <div
@@ -89,10 +106,10 @@ export default function App() {
         arraySize={arraySize}
         onArraySizeChange={handleArraySizeChange}
         algorithm={algorithm}
-        onAlgorithmChange={setAlgorithm} // dropdown callback
+        onAlgorithmChange={setAlgorithm}
       />
 
-      <SortingCanvas
+      <CanvasComponent
         steps={steps}
         isPlaying={isPlaying}
         resetSignal={resetCounter}
