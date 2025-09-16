@@ -1,6 +1,7 @@
 // src/algorithms/sorting/mergeSort.js
-// Generates fine-grained steps for Merge Sort tree visualization.
-// Steps include actions: start, split, compare, place, merged, leaf, done
+// Generates steps for Merge Sort visualization with a persistent recursion tree.
+// All nodes are created upfront and remain visible throughout the animation.
+
 export function mergeSortSteps(inputArray) {
   const items = (inputArray || []).map((v, idx) => ({
     id: idx,
@@ -9,7 +10,7 @@ export function mergeSortSteps(inputArray) {
 
   const steps = [];
 
-  // create a node representing array slice [left..right]
+  // Create a node for array slice [left..right]
   const createNode = (left, right, arr) => ({
     id: `${left}-${right}`,
     leftIndex: left,
@@ -17,8 +18,21 @@ export function mergeSortSteps(inputArray) {
     array: arr.slice(left, right + 1).map((x) => ({ ...x })),
     left: null,
     right: null,
+    merged: false,
   });
 
+  // Recursively build full tree (persistent)
+  const buildTree = (arr, left, right) => {
+    const node = createNode(left, right, arr);
+    if (left < right) {
+      const mid = Math.floor((left + right) / 2);
+      node.left = buildTree(arr, left, mid);
+      node.right = buildTree(arr, mid + 1, right);
+    }
+    return node;
+  };
+
+  // Deep clone node for snapshot (so steps are immutable)
   const cloneNode = (node) => {
     if (!node) return null;
     return {
@@ -26,12 +40,13 @@ export function mergeSortSteps(inputArray) {
       leftIndex: node.leftIndex,
       rightIndex: node.rightIndex,
       array: node.array.map((x) => ({ ...x })),
+      merged: node.merged,
       left: cloneNode(node.left),
       right: cloneNode(node.right),
     };
   };
 
-  // safe pushStep (always include an action object)
+  // Safe push step
   const pushStep = (rootNode, action = { type: "idle" }) => {
     steps.push({
       tree: cloneNode(rootNode),
@@ -39,14 +54,13 @@ export function mergeSortSteps(inputArray) {
     });
   };
 
-  // merge for [left..mid] and [mid+1..right], emitting compare/place actions
-  const merge = (node, sourceArr, left, mid, right) => {
+  // Merge with compare/place actions
+  const merge = (rootNode, node, sourceArr, left, mid, right) => {
     const n1 = mid - left + 1;
     const n2 = right - mid;
 
     const L = [];
     const R = [];
-
     for (let i = 0; i < n1; i++) L.push({ ...sourceArr[left + i] });
     for (let j = 0; j < n2; j++) R.push({ ...sourceArr[mid + 1 + j] });
 
@@ -55,13 +69,16 @@ export function mergeSortSteps(inputArray) {
       k = left;
 
     while (i < n1 && j < n2) {
-      // show compare of the two head elements (include parent node for context)
-      pushStep(node, { type: "compare", nodeId: node.id, indices: [L[i].id, R[j].id] });
+      pushStep(rootNode, {
+        type: "compare",
+        nodeId: node.id,
+        indices: [L[i].id, R[j].id],
+      });
 
       if (L[i].value <= R[j].value) {
         sourceArr[k] = { ...L[i] };
-        // place action includes item id, parent node id, source node id and target index within parent
-        pushStep(node, {
+        node.array[k - left] = { ...L[i] };
+        pushStep(rootNode, {
           type: "place",
           id: L[i].id,
           nodeId: node.id,
@@ -71,7 +88,8 @@ export function mergeSortSteps(inputArray) {
         i++;
       } else {
         sourceArr[k] = { ...R[j] };
-        pushStep(node, {
+        node.array[k - left] = { ...R[j] };
+        pushStep(rootNode, {
           type: "place",
           id: R[j].id,
           nodeId: node.id,
@@ -81,13 +99,12 @@ export function mergeSortSteps(inputArray) {
         j++;
       }
       k++;
-      // update parent node slice so snapshot shows partial merged state
-      node.array = sourceArr.slice(left, right + 1).map((x) => ({ ...x }));
     }
 
     while (i < n1) {
       sourceArr[k] = { ...L[i] };
-      pushStep(node, {
+      node.array[k - left] = { ...L[i] };
+      pushStep(rootNode, {
         type: "place",
         id: L[i].id,
         nodeId: node.id,
@@ -96,12 +113,12 @@ export function mergeSortSteps(inputArray) {
       });
       i++;
       k++;
-      node.array = sourceArr.slice(left, right + 1).map((x) => ({ ...x }));
     }
 
     while (j < n2) {
       sourceArr[k] = { ...R[j] };
-      pushStep(node, {
+      node.array[k - left] = { ...R[j] };
+      pushStep(rootNode, {
         type: "place",
         id: R[j].id,
         nodeId: node.id,
@@ -110,43 +127,34 @@ export function mergeSortSteps(inputArray) {
       });
       j++;
       k++;
-      node.array = sourceArr.slice(left, right + 1).map((x) => ({ ...x }));
     }
   };
 
-  // recursive build + emits
-  const mergeSortRecursive = (node, sourceArr, left, right) => {
+  // Recursive merge sort on persistent tree
+  const mergeSortRecursive = (rootNode, node, sourceArr, left, right) => {
     if (left >= right) {
-      // base single-element snapshot
-      pushStep(node, { type: "leaf", nodeId: node.id });
+      pushStep(rootNode, { type: "leaf", nodeId: node.id });
       return;
     }
 
     const mid = Math.floor((left + right) / 2);
 
-    node.left = createNode(left, mid, sourceArr);
-    node.right = createNode(mid + 1, right, sourceArr);
+    pushStep(rootNode, { type: "split", nodeId: node.id, left, mid, right });
 
-    // snapshot showing split
-    pushStep(node, { type: "split", nodeId: node.id, left, mid, right });
+    mergeSortRecursive(rootNode, node.left, sourceArr, left, mid);
+    mergeSortRecursive(rootNode, node.right, sourceArr, mid + 1, right);
 
-    mergeSortRecursive(node.left, sourceArr, left, mid);
-    mergeSortRecursive(node.right, sourceArr, mid + 1, right);
+    merge(rootNode, node, sourceArr, left, mid, right);
 
-    // merge with animated steps
-    merge(node, sourceArr, left, mid, right);
-
-    // collapse children into parent array
-    node.left = null;
-    node.right = null;
-    node.array = sourceArr.slice(left, right + 1).map((x) => ({ ...x }));
-    pushStep(node, { type: "merged", nodeId: node.id, left, mid, right });
+    node.merged = true;
+    pushStep(rootNode, { type: "merged", nodeId: node.id, left, mid, right });
   };
 
-  // root and run
-  const root = createNode(0, items.length - 1, items);
+  // Build persistent root
+  const root = buildTree(items, 0, items.length - 1);
+
   pushStep(root, { type: "start" });
-  mergeSortRecursive(root, items, 0, items.length - 1);
+  mergeSortRecursive(root, root, items, 0, items.length - 1);
   pushStep(root, { type: "done" });
 
   return steps;
