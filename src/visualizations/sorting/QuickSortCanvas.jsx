@@ -33,14 +33,25 @@ export default function QuickSortCanvas({
     return () => clearTimeout(t);
   }, [isPlaying, currentStep, speed, steps, onFinish]);
 
-  if (!steps || steps.length === 0) {
-    return <div style={{ textAlign: "center", padding: 20 }}>No steps to display</div>;
+  // ✅ guard: no steps OR invalid index
+  if (!steps || steps.length === 0 || currentStep >= steps.length) {
+    return (
+      <div style={{ textAlign: "center", padding: 20 }}>
+        No steps to display
+      </div>
+    );
   }
 
   const step = steps[currentStep];
-  const array = step.array || [];
+  if (!step || !step.array) {
+    return (
+      <div style={{ textAlign: "center", padding: 20 }}>
+        Preparing visualization...
+      </div>
+    );
+  }
 
-  // layout constants
+  const array = step.array;
   const barWidth = 40;
   const gap = 10;
   const barScale = 12;
@@ -48,10 +59,8 @@ export default function QuickSortCanvas({
 
   const transitionMs = Math.min(Math.max(80, Math.floor(speed * 0.75)), 350);
 
-  const bars = [];
-
-  array.forEach((item, index) => {
-    if (!item) return;
+  const bars = array.map((item, index) => {
+    if (!item) return null;
 
     const isPivot = step.pivot === item.id;
     const isComparing = (step.comparing || []).includes(item.id);
@@ -62,7 +71,7 @@ export default function QuickSortCanvas({
     else if (isComparing) color = "gold";
     else if (isSwapped) color = "tomato";
 
-    bars.push(
+    return (
       <div
         key={`${runId}-${item.id}`}
         title={`value: ${item.value}`}

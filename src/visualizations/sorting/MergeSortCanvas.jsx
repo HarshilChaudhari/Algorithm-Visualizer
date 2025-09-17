@@ -30,11 +30,13 @@ export default function MergeSortCanvas({
 }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [floating, setFloating] = useState(null);
+  const [lastComparing, setLastComparing] = useState(null);
 
   // Reset when steps or resetSignal changes
   useEffect(() => {
     setCurrentStep(0);
     setFloating(null);
+    setLastComparing(null);
   }, [steps, resetSignal, runId]);
 
   // Animation timer
@@ -55,8 +57,17 @@ export default function MergeSortCanvas({
     return <div style={{ textAlign: "center", padding: 20 }}>No steps to display</div>;
   }
 
-  const step = steps[currentStep] || { tree: null, action: { type: "idle" } };
-  const action = step.action || { type: "idle" };
+  const step = steps[currentStep] || { tree: null, type: "idle" };
+  const action = step.type ? step : { type: "idle" };
+
+  // Keep comparison highlight alive during next "place"
+  useEffect(() => {
+    if (action.type === "comparing") {
+      setLastComparing(action.comparing || []);
+    } else if (action.type !== "place") {
+      setLastComparing(null);
+    }
+  }, [action]);
 
   // Deep clone tree & assign layout positions
   const computeLayout = (tree) => {
@@ -122,6 +133,7 @@ export default function MergeSortCanvas({
   const barPosition = (node, idx) => {
     if (!node) return null;
     const bars = node.array || [];
+    if (idx < 0 || idx >= bars.length) return null;
     const barsWidth = (bars.length || 0) * (BAR_WIDTH + GAP) - GAP;
     const contentLeft = node.x + (node.nodeWidth - barsWidth) / 2;
     const x = contentLeft + idx * (BAR_WIDTH + GAP);
@@ -131,7 +143,7 @@ export default function MergeSortCanvas({
     return { left: x, top, width: BAR_WIDTH, height: barHeight };
   };
 
-  // Handle "place" animation
+  // Handle floating "place" animation
   useEffect(() => {
     if (action.type !== "place") {
       setFloating(null);
@@ -160,11 +172,13 @@ export default function MergeSortCanvas({
     if (!sourceNode || !targetNode) return;
 
     const srcIdx = (sourceNode.array || []).findIndex((it) => it.id === itemId);
-    const tgtIdx = targetIndex ?? (targetNode.array || []).findIndex((it) => it.id === itemId);
-    if (srcIdx === -1 || tgtIdx === -1) return;
+    const tgtIdx = targetIndex; // rely strictly on mergeSortSteps
+    if (srcIdx === -1 || tgtIdx == null) return;
 
     const srcBar = barPosition(sourceNode, srcIdx);
     const tgtBar = barPosition(targetNode, tgtIdx);
+    if (!srcBar || !tgtBar) return;
+
     const duration = Math.min(Math.max(120, Math.floor(speed * 0.75)), 600);
 
     setFloating({
@@ -228,16 +242,20 @@ export default function MergeSortCanvas({
     <div style={{ overflowX: "auto", padding: 10 }}>
       <div style={{ textAlign: "center", marginBottom: 8 }}>
         <strong>Merge Sort — Step:</strong> {currentStep + 1} / {steps.length}
-        <div style={{ fontSize: 12, color: "#666" }}>Action: <strong>{action.type}</strong></div>
+        <div style={{ fontSize: 12, color: "#666" }}>
+          Action: <strong>{action.type}</strong>
+        </div>
       </div>
 
       <div style={{ position: "relative", width: svgWidth, height: svgHeight, margin: "0 auto" }}>
+        {/* Edges */}
         <svg style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }} width={svgWidth} height={svgHeight}>
           {connections.map((c, idx) => (
             <line key={idx} x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} stroke="#aaa" strokeWidth={1} />
           ))}
         </svg>
 
+        {/* Nodes */}
         {nodes.map((node) => {
           const isActive = action.nodeId === node.id;
           const borderColor =
@@ -266,8 +284,16 @@ export default function MergeSortCanvas({
               <div style={{ display: "flex", gap: GAP, alignItems: "flex-end", justifyContent: "center", height: LEVEL_GAP / 2 }}>
                 {bars.map((item, idx) => {
                   const height = Math.max(4, item.value * BAR_SCALE);
-                  const isComp = action.type === "compare" && action.indices?.includes(item.id);
+                  const isComp =
+                    (action.type === "comparing" && action.comparing?.includes(item.id)) ||
+                    (lastComparing?.includes(item.id) && action.type === "place");
                   const isPlace = action.type === "place" && action.id === item.id && isActive;
+                  const isCoveredByFloating = floating && floating.id === item.id;
+
+                  if (isCoveredByFloating) {
+                    return <div key={`${node.id}-${item.id}`} style={{ width: BAR_WIDTH, height }} />; // reserve space
+                  }
+
                   const bg = isComp ? "#ff9800" : isPlace ? "#4caf50" : "#3182ce";
                   return (
                     <div key={`${node.id}-${item.id}`} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -292,6 +318,7 @@ export default function MergeSortCanvas({
           );
         })}
 
+        {/* Floating bar animation */}
         {floating && (
           <div
             style={{

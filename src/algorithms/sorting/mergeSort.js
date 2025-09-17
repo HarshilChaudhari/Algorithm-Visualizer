@@ -1,16 +1,57 @@
 // src/algorithms/sorting/mergeSort.js
-// Generates steps for Merge Sort visualization with a persistent recursion tree.
-// All nodes are created upfront and remain visible throughout the animation.
+// Emits step-by-step snapshots for Merge Sort with lazy node creation
+// so that the recursion tree grows as the algorithm unfolds.
 
-export function mergeSortSteps(inputArray) {
-  const items = (inputArray || []).map((v, idx) => ({
-    id: idx,
-    value: typeof v === "number" ? v : Number(v) || 0,
-  }));
+// Named export + default export at bottom so either import style works.
 
+export function mergeSortSteps(inputArr = []) {
   const steps = [];
 
-  // Create a node for array slice [left..right]
+  // normalize values (accept number | {value} | string)
+  const toVal = (v) =>
+    typeof v === "number" ? v : v && typeof v.value === "number" ? v.value : Number(v) || 0;
+
+  const items = (inputArr || []).map((v, idx) => ({
+    id: idx,
+    value: toVal(v),
+  }));
+
+  // if no items, return a single done step (safe)
+  if (items.length === 0) {
+    const doneStep = { tree: null, action: { type: "done" }, type: "done", done: true };
+    steps.push(doneStep);
+    return steps;
+  }
+
+  // Utility: deep snapshot of the tree
+  const snapshot = (node) => {
+    if (!node) return null;
+    return {
+      id: node.id,
+      leftIndex: node.leftIndex,
+      rightIndex: node.rightIndex,
+      array: (node.array || []).map((x) => ({ ...x })),
+      merged: !!node.merged,
+      left: snapshot(node.left),
+      right: snapshot(node.right),
+    };
+  };
+
+  // pushStep: builds step with a nested `action` object and also spreads
+  // action props at the root (for backward compatibility).
+  const pushStep = (root, action = {}) => {
+    const actionObj = Object.keys(action).length ? action : { type: "idle" };
+    const stepObj = {
+      tree: snapshot(root),
+      action: actionObj,
+      // also include fields at top-level to support older consumers
+      ...actionObj,
+    };
+    if (actionObj.type === "done") stepObj.done = true;
+    steps.push(stepObj);
+  };
+
+  // create node lazily
   const createNode = (left, right, arr) => ({
     id: `${left}-${right}`,
     leftIndex: left,
@@ -21,116 +62,89 @@ export function mergeSortSteps(inputArray) {
     merged: false,
   });
 
-  // Recursively build full tree (persistent)
-  const buildTree = (arr, left, right) => {
-    const node = createNode(left, right, arr);
-    if (left < right) {
-      const mid = Math.floor((left + right) / 2);
-      node.left = buildTree(arr, left, mid);
-      node.right = buildTree(arr, mid + 1, right);
-    }
-    return node;
-  };
-
-  // Deep clone node for snapshot (so steps are immutable)
-  const cloneNode = (node) => {
-    if (!node) return null;
-    return {
-      id: node.id,
-      leftIndex: node.leftIndex,
-      rightIndex: node.rightIndex,
-      array: node.array.map((x) => ({ ...x })),
-      merged: node.merged,
-      left: cloneNode(node.left),
-      right: cloneNode(node.right),
-    };
-  };
-
-  // Safe push step
-  const pushStep = (rootNode, action = { type: "idle" }) => {
-    steps.push({
-      tree: cloneNode(rootNode),
-      action: action || { type: "idle" },
-    });
-  };
-
-  // Merge with compare/place actions
-  const merge = (rootNode, node, sourceArr, left, mid, right) => {
+  // merge routine: emits compare & place steps
+  const merge = (rootNode, node, arr, left, mid, right) => {
     const n1 = mid - left + 1;
     const n2 = right - mid;
 
     const L = [];
     const R = [];
-    for (let i = 0; i < n1; i++) L.push({ ...sourceArr[left + i] });
-    for (let j = 0; j < n2; j++) R.push({ ...sourceArr[mid + 1 + j] });
+    for (let i = 0; i < n1; i++) L.push({ ...arr[left + i] });
+    for (let j = 0; j < n2; j++) R.push({ ...arr[mid + 1 + j] });
 
     let i = 0,
       j = 0,
       k = left;
 
     while (i < n1 && j < n2) {
+      // comparison step
       pushStep(rootNode, {
         type: "compare",
-        nodeId: node.id,
         indices: [L[i].id, R[j].id],
+        nodeId: node.id,
       });
 
-      if (L[i].value <= R[j].value) {
-        sourceArr[k] = { ...L[i] };
-        node.array[k - left] = { ...L[i] };
-        pushStep(rootNode, {
-          type: "place",
-          id: L[i].id,
-          nodeId: node.id,
-          fromNodeId: node.left ? node.left.id : null,
-          targetIndex: k - left,
-        });
-        i++;
-      } else {
-        sourceArr[k] = { ...R[j] };
-        node.array[k - left] = { ...R[j] };
-        pushStep(rootNode, {
-          type: "place",
-          id: R[j].id,
-          nodeId: node.id,
-          fromNodeId: node.right ? node.right.id : null,
-          targetIndex: k - left,
-        });
-        j++;
-      }
+      // pick smaller (stable: <=)
+      const chosen = L[i].value <= R[j].value ? L[i] : R[j];
+      const chosenFrom = chosen === L[i] ? (node.left ? node.left.id : null) : (node.right ? node.right.id : null);
+
+      arr[k] = { ...chosen };
+
+      // update node's visible array slice
+      node.array = arr.slice(node.leftIndex, node.rightIndex + 1).map((x) => ({ ...x }));
+
+      // place step (drives floating animation)
+      pushStep(rootNode, {
+        type: "place",
+        id: chosen.id,
+        nodeId: node.id,
+        fromNodeId: chosenFrom,
+        targetIndex: k - left,
+      });
+
+      if (chosen === L[i]) i++;
+      else j++;
       k++;
     }
 
+    // leftover from L
     while (i < n1) {
-      sourceArr[k] = { ...L[i] };
-      node.array[k - left] = { ...L[i] };
+      const chosen = { ...L[i] };
+      arr[k] = chosen;
+      node.array = arr.slice(node.leftIndex, node.rightIndex + 1).map((x) => ({ ...x }));
+
       pushStep(rootNode, {
         type: "place",
-        id: L[i].id,
+        id: chosen.id,
         nodeId: node.id,
         fromNodeId: node.left ? node.left.id : null,
         targetIndex: k - left,
       });
+
       i++;
       k++;
     }
 
+    // leftover from R
     while (j < n2) {
-      sourceArr[k] = { ...R[j] };
-      node.array[k - left] = { ...R[j] };
+      const chosen = { ...R[j] };
+      arr[k] = chosen;
+      node.array = arr.slice(node.leftIndex, node.rightIndex + 1).map((x) => ({ ...x }));
+
       pushStep(rootNode, {
         type: "place",
-        id: R[j].id,
+        id: chosen.id,
         nodeId: node.id,
         fromNodeId: node.right ? node.right.id : null,
         targetIndex: k - left,
       });
+
       j++;
       k++;
     }
   };
 
-  // Recursive merge sort on persistent tree
+  // recursive merge sort (with lazy creation of children)
   const mergeSortRecursive = (rootNode, node, sourceArr, left, right) => {
     if (left >= right) {
       pushStep(rootNode, { type: "leaf", nodeId: node.id });
@@ -138,6 +152,10 @@ export function mergeSortSteps(inputArray) {
     }
 
     const mid = Math.floor((left + right) / 2);
+
+    // create children lazily when we split
+    node.left = createNode(left, mid, sourceArr);
+    node.right = createNode(mid + 1, right, sourceArr);
 
     pushStep(rootNode, { type: "split", nodeId: node.id, left, mid, right });
 
@@ -150,12 +168,14 @@ export function mergeSortSteps(inputArray) {
     pushStep(rootNode, { type: "merged", nodeId: node.id, left, mid, right });
   };
 
-  // Build persistent root
-  const root = buildTree(items, 0, items.length - 1);
-
+  // kickoff
+  const root = createNode(0, items.length - 1, items);
   pushStep(root, { type: "start" });
   mergeSortRecursive(root, root, items, 0, items.length - 1);
   pushStep(root, { type: "done" });
 
   return steps;
 }
+
+// exports: named + default
+export default mergeSortSteps;
