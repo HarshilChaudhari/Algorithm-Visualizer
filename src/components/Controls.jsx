@@ -81,7 +81,8 @@ const Controls = ({
           <option value="insertion">Insertion Sort</option>
           <option value="heap">Heap Sort</option>
           <option value="quick">Quick Sort</option>
-          <option value="merge">Merge Sort</option> {/* new option */}
+          <option value="merge">Merge Sort</option>
+          <option value="bst">Binary Search Tree</option>
         </select>
       </div>
 
